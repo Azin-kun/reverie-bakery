@@ -31,7 +31,8 @@ app.post("/", async(req, res) => {
         email: req.body.email,
         phone_number: req.body.phone_number,
         address: req.body.address,
-        user_type: req.body.user_type
+        user_type: req.body.user_type,
+        balance: req.body.balance,
     }
 
     user.create(data)
@@ -57,7 +58,8 @@ app.put("/", async(req, res) => {
       email: req.body.email,
       phone_number: req.body.phone_number,
       address: req.body.address,
-      user_type: req.body.user_type
+      user_type: req.body.user_type,
+      balance: req.body.balance
   }
       
   let param = {

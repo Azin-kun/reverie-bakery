@@ -21,25 +21,26 @@ app.get("/", async (req, res) => {
   }
 });
 
+// Get an order by order_id
 app.get("/:order_id", async (req, res) => {
-    try {
-      const { order_id } = req.params;
-  
-      const order = await Order.findByPk(order_id, {
-        include: [{ model: OrderDetail, include: [Product] }],
-      });
-  
-      if (!order) {
-        return res.status(404).json({ message: "Order not found" });
-      }
-  
-      res.json(order);
-    } catch (error) {
-      res.status(500).json({ message: error.message });
-    }
-  });
+  try {
+    const { order_id } = req.params;
 
-// Create a new order
+    const order = await Order.findByPk(order_id, {
+      include: [{ model: OrderDetail, include: [Product] }],
+    });
+
+    if (!order) {
+      return res.status(404).json({ message: "Order not found" });
+    }
+
+    res.json(order);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// Create a new order (add products to cart)
 app.post("/", async (req, res) => {
   const transaction = await sequelize.transaction();
 
@@ -92,82 +93,82 @@ app.post("/", async (req, res) => {
   }
 });
 
-// Update an order
-app.put("/", async (req, res) => {
-  const transaction = await sequelize.transaction();
+app.post("/add-to-cart", async (req, res) => {
+  const { user_id, product_id, quantity, price } = req.body;
 
   try {
-    const { order_id, user_id, order_date, status, products } = req.body;
-
-    const order = await Order.findByPk(order_id, { transaction });
-
-    if (!order) {
-      await transaction.rollback();
-      return res.status(404).json({ message: "Order not found" });
+    if (!user_id) {
+      return res.status(400).json({ message: "User ID is required" });
     }
 
-    // Check if all products exist
-    for (const product of products) {
-      const existingProduct = await Product.findByPk(product.product_id);
-      if (!existingProduct) {
-        throw new Error(`Product with id ${product.product_id} does not exist`);
+    const existingProduct = await Product.findByPk(product_id);
+    if (!existingProduct) {
+      return res.status(404).json({ message: `Product with id ${product_id} does not exist` });
+    }
+
+    const order = await Order.findOne({
+      where: {
+        user_id,
+        status: 'cart', // Assuming 'cart' status is used for pending orders
+      },
+    });
+
+    let orderDetail;
+    if (order) {
+      orderDetail = await OrderDetail.findOne({
+        where: {
+          order_id: order.order_id,
+          product_id,
+        },
+      });
+    }
+
+    const transaction = await sequelize.transaction();
+
+    try {
+      if (orderDetail) {
+        orderDetail.quantity += quantity;
+        await orderDetail.save({ transaction });
+      } else {
+        orderDetail = await OrderDetail.create({
+          order_id: order ? order.order_id : null,
+          product_id,
+          quantity,
+          price,
+        }, { transaction });
       }
+
+      if (!order) {
+        const newOrder = await Order.create({
+          user_id,
+          order_date: new Date(),
+          status: 'cart',
+          total_amount: price * quantity,
+        }, { transaction });
+
+        orderDetail.order_id = newOrder.order_id;
+        await orderDetail.save({ transaction });
+      } else {
+        order.total_amount += price * quantity;
+        await order.save({ transaction });
+      }
+
+      await transaction.commit();
+
+      res.json({
+        message: "Product added to cart successfully",
+        data: orderDetail,
+      });
+    } catch (error) {
+      await transaction.rollback();
+      throw error; // Let the error be caught by the outer catch block
     }
-
-    order.user_id = user_id;
-    order.order_date = order_date;
-    order.status = status;
-    await order.save({ transaction });
-
-    await OrderDetail.destroy({ where: { order_id }, transaction });
-
-    let totalAmount = 0;
-    const orderDetails = products.map((product) => {
-      totalAmount += product.quantity * product.price;
-      return {
-        order_id: order.order_id,
-        product_id: product.product_id,
-        quantity: product.quantity,
-        price: product.price,
-      };
-    });
-
-    await OrderDetail.bulkCreate(orderDetails, { transaction });
-
-    order.total_amount = totalAmount;
-    await order.save({ transaction });
-
-    await transaction.commit();
-
-    res.json({
-      message: "Order updated successfully",
-      data: order,
-    });
   } catch (error) {
-    await transaction.rollback();
-    res.status(500).json({ message: error.message });
+    console.error("Error adding product to cart:", error);
+    res.status(500).json({ message: "Internal server error" });
   }
 });
 
-// Delete an order
-app.delete("/:order_id", async (req, res) => {
-  const transaction = await sequelize.transaction();
 
-  try {
-    const { order_id } = req.params;
-
-    await OrderDetail.destroy({ where: { order_id }, transaction });
-    await Order.destroy({ where: { order_id }, transaction });
-
-    await transaction.commit();
-
-    res.json({
-      message: "Order deleted successfully",
-    });
-  } catch (error) {
-    await transaction.rollback();
-    res.status(500).json({ message: error.message });
-  }
-});
 
 module.exports = app;

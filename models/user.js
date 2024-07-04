@@ -20,7 +20,12 @@ module.exports = (sequelize, DataTypes) => {
     email: DataTypes.STRING,
     phone_number: DataTypes.STRING,
     address: DataTypes.STRING,
-    user_type: DataTypes.ENUM('customer', 'admin', 'owner')
+    user_type: DataTypes.ENUM('customer', 'admin', 'owner'),
+    balance: {
+      type: DataTypes.FLOAT,
+      allowNull: false,
+      defaultValue: 0
+    }
   }, {
     sequelize,
     modelName: 'User',
